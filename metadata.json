@@ -1,0 +1,6 @@
+{
+  "name": "FOSSA Suggestion Box",
+  "description": "A customized digital suggestions box for the Faculty of Science Student Association (FOSSA) to submit feedback, complaints, and ideas directly to the committee with AI-powered safety analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

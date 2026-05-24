@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Suggestions collection
+    match /suggestions/{suggestionId} {
+      allow read, write: if true;
+    }
+
+    // Custom Shareable Forms metadata collection
+    match /forms/{formId} {
+      allow read, write: if true;
+    }
+
+    // Admins helper fallback collection
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    // Connection validation collection
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "suggestion": {
+      "title": "Suggestion",
+      "description": "A feedback, complaint, or idea submitted by a student or staff member",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "description": "Optional name of the submitter" },
+        "department": { "type": "string", "description": "Department such as Computer Science, Engineering, etc." },
+        "level": { "type": "string", "description": "Level or role, e.g., 100-400, Postgrad, Staff" },
+        "category": { "type": "string", "description": "Category of feedback: Suggestion, Complaint, Feedback, Idea" },
+        "message": { "type": "string", "description": "The feedback body text content" },
+        "isAnonymous": { "type": "boolean", "description": "True if the submitter chose anonymity" },
+        "status": { "type": "string", "enum": ["pending", "reviewed"], "description": "Review status of suggestion" },
+        "sentiment": { "type": "string", "enum": ["positive", "complaint", "urgent", "neutral"], "description": "AI sentiment analysis label" },
+        "sentimentReasoning": { "type": "string", "description": "Visual explanation for AI safety metrics" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when submitted" },
+        "formId": { "type": "string", "description": "Optional custom form reference ID" }
+      },
+      "required": ["department", "level", "category", "message", "isAnonymous", "status", "createdAt"]
+    },
+    "form": {
+      "title": "Custom Form",
+      "description": "A dynamic feedback channel config created by an administrator",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the custom form" },
+        "description": { "type": "string", "description": "Guiding statement or description of the custom form" },
+        "allowedFaculty": { "type": "array", "description": "Permitted departments" },
+        "allowedCategories": { "type": "array", "description": "Permitted submission tags" },
+        "allowAnonymity": { "type": "boolean", "description": "Whether students can submit anonymously" },
+        "createdBy": { "type": "string", "description": "Admin email associated with this custom form" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when this custom form was created" }
+      },
+      "required": ["title", "description", "allowedFaculty", "allowedCategories", "allowAnonymity", "createdBy", "createdAt"]
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Whitelist of university faculty administrators",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Google email address of authorized admin" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/suggestions/{suggestionId}": {
+      "schema": "suggestion",
+      "description": "Collection of all submitted ideas, feedback, and complaints"
+    },
+    "/forms/{formId}": {
+      "schema": "form",
+      "description": "Custom administrator-created shareable feedback form configuration"
+    },
+    "/admins/{adminId}": {
+      "schema": "admin",
+      "description": "Whitelisted administration IDs"
+    }
+  }
+}

@@ -1,0 +1,251 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-[#f4f7fa] text-slate-800 min-h-screen selection:bg-purple-600/20 selection:text-purple-900 antialiased overflow-x-hidden relative;
+    background-image: 
+      radial-gradient(circle at 10% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
+      radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.12) 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, rgba(129, 140, 248, 0.08) 0%, transparent 60%);
+  }
+}
+
+/* Hyper-Realistic 3D Liquid Glass Backplate Card */
+.glass-card {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 24px;
+  /* Multi-layered shadows: Outer micro shadow + deep shadow + white top edge inset */
+  box-shadow: 
+    0 10px 30px -10px rgba(15, 23, 42, 0.06),
+    0 25px 50px -12px rgba(15, 23, 42, 0.04),
+    inset 0 1px 2px rgba(255, 255, 255, 0.7);
+}
+
+.glass-card-premium {
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 32px;
+  box-shadow: 
+    0 30px 60px -15px rgba(15, 23, 42, 0.08),
+    inset 0 2px 2px rgba(255, 255, 255, 0.6),
+    inset 0 -2px 4px rgba(15, 23, 42, 0.03);
+}
+
+/* Recessed slots (Inset inputs) */
+.glass-input {
+  background: rgba(15, 23, 42, 0.03);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 16px;
+  color: #1e293b;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  /* The recessed illusion using inset top-dark drop shadow + bottom light stroke */
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.06), 
+    0 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+.glass-input:focus {
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.03),
+    0 0 16px rgba(168, 85, 247, 0.15), 
+    0 1px 2px rgba(255, 255, 255, 0.7);
+}
+
+.glass-navbar {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 4px 20px -5px rgba(15, 23, 42, 0.02);
+}
+
+/* Liquid-Capped 3D Jelly Glass Buttons */
+.jelly-glass-button {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.jelly-button-purple {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.85), rgba(79, 70, 229, 0.85));
+  color: white;
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.55),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(147, 51, 234, 0.15);
+}
+.jelly-button-purple:hover {
+  transform: translateY(-1.5px) scale(1.015);
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.65),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.1),
+    0 12px 22px rgba(147, 51, 234, 0.25);
+}
+.jelly-button-purple:active {
+  transform: translateY(0.5px) scale(0.985);
+  box-shadow: 
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.2),
+    0 5px 10px rgba(147, 51, 234, 0.15);
+}
+
+.jelly-button-blue {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.85), rgba(37, 99, 235, 0.85));
+  color: white;
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.55),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(37, 99, 235, 0.15);
+}
+.jelly-button-blue:hover {
+  transform: translateY(-1.5px) scale(1.015);
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.65),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.1),
+    0 12px 22px rgba(37, 99, 235, 0.25);
+}
+.jelly-button-blue:active {
+  transform: translateY(0.5px) scale(0.985);
+  box-shadow: 
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.2),
+    0 5px 10px rgba(37, 99, 235, 0.15);
+}
+
+.jelly-button-emerald {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.85), rgba(5, 150, 105, 0.85));
+  color: white;
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.55),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(16, 185, 129, 0.15);
+}
+.jelly-button-emerald:hover {
+  transform: translateY(-1.5px) scale(1.015);
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.65),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.1),
+    0 12px 22px rgba(16, 185, 129, 0.25);
+}
+.jelly-button-emerald:active {
+  transform: translateY(0.5px) scale(0.985);
+  box-shadow: 
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.2),
+    0 5px 10px rgba(16, 185, 129, 0.15);
+}
+
+.jelly-button-slate {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(241, 245, 249, 0.8));
+  color: #475569;
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.9),
+    inset 0 -4px 6px rgba(15, 23, 42, 0.05),
+    0 8px 16px rgba(15, 23, 42, 0.03);
+}
+.jelly-button-slate:hover {
+  transform: translateY(-1.5px) scale(1.015);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(248, 250, 252, 0.85));
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.9),
+    inset 0 -4px 6px rgba(15, 23, 42, 0.04),
+    0 12px 22px rgba(15, 23, 42, 0.05);
+}
+.jelly-button-slate:active {
+  transform: translateY(0.5px) scale(0.985);
+  box-shadow: 
+    inset 0 2px 3px rgba(255, 255, 255, 0.8),
+    inset 0 -2px 3px rgba(15, 23, 42, 0.08),
+    0 5px 10px rgba(15, 23, 42, 0.04);
+}
+
+/* Background floating decorations */
+@keyframes float-slow {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(60px, -80px) scale(1.2);
+  }
+  66% {
+    transform: translate(-50px, 60px) scale(0.85);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-60px, 80px) scale(1.15);
+  }
+}
+
+.animate-float-orchid {
+  animation: float-slow 22s ease-in-out infinite;
+}
+
+.animate-float-cyan {
+  animation: float-reverse 26s ease-in-out infinite;
+}
+
+/* Custom styled neon glowing utilities */
+.neon-glow-blue {
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+.neon-glow-purple {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.15);
+}
+
+.neon-glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+}
+
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  border-color: rgba(168, 85, 247, 0.2);
+  box-shadow: 
+    0 12px 40px -10px rgba(168, 85, 247, 0.1),
+    inset 0 1px 2px rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+}
+
+/* Custom Webkit scrollbar for premium aesthetics */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.25);
+}
