@@ -1,7 +1,34 @@
-import { useState, useEffect, FormEvent } from "react";
-import { Copy, Plus, ClipboardCheck, Trash2, Calendar, Layout, ToggleLeft, ShieldAlert, Sparkles, Sliders } from "lucide-react";
-import { collection, doc, setDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp } from "firebase/firestore";
-import { db } from "../firebase";
+import { useState, useEffect, FormEvent, ChangeEvent, useRef } from "react";
+import { 
+  Copy, 
+  Plus, 
+  Trash2, 
+  Image as ImageIcon,
+  PlaySquare,
+  Equal,
+  GripHorizontal,
+  Wand2,
+  AlertCircle,
+  MoreVertical,
+  CheckCircle2,
+  Settings as SettingsIcon,
+  MessageSquare,
+  Eye,
+  LogOut,
+  ChevronDown,
+  Clock,
+  ArrowLeft,
+  Inbox,
+  Share2,
+  QrCode,
+  X
+} from "lucide-react";
+import { collection, doc, setDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp, where, updateDoc, getDoc } from "firebase/firestore";
+import { db, auth } from "../firebase";
+import { FormField, FeedbackForm, Suggestion } from "../types";
+import { motion, AnimatePresence } from "motion/react";
+import { User, signOut } from "firebase/auth";
+import { QRCodeSVG } from "qrcode.react";
 
 const FACULTIES_LIST = [
   "Computing Sciences",
@@ -11,403 +38,805 @@ const FACULTIES_LIST = [
 
 const CATEGORIES_LIST = ["Suggestion", "Complaint", "Feedback", "Idea"];
 
-interface CustomForm {
-  id: string;
-  title: string;
-  description: string;
-  allowedFaculty: string[];
-  allowedCategories: string[];
-  allowAnonymity: boolean;
-  createdAt: any;
-}
-
-interface AdminFormCreatorProps {
-  adminEmail: string;
-}
-
-export default function AdminFormCreator({ adminEmail }: AdminFormCreatorProps) {
-  // Creator states
+export default function AdminFormCreator({ 
+  adminId, 
+  initialFormState, 
+  onClearInitial,
+  editingFormId,
+  user,
+  onClose
+}: { 
+  adminId: string, 
+  initialFormState?: any, 
+  onClearInitial?: () => void,
+  editingFormId?: string,
+  user: User | null,
+  onClose?: () => void
+}) {
+  const [currentTab, setCurrentTab] = useState<"Questions" | "Responses" | "Settings">("Questions");
+  const [formId, setFormId] = useState<string | null>(editingFormId || null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [allowedFaculty, setAllowedFaculty] = useState<string[]>(FACULTIES_LIST);
-  const [allowedCategories, setAllowedCategories] = useState<string[]>(CATEGORIES_LIST);
   const [allowAnonymity, setAllowAnonymity] = useState(true);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string>("header");
 
+  const [fields, setFields] = useState<FormField[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [latestLinkId, setLatestLinkId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  
+  const [responses, setResponses] = useState<any[]>([]);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Active form list states
-  const [savedForms, setSavedForms] = useState<CustomForm[]>([]);
-  const [fetchingForms, setFetchingForms] = useState(false);
+  // Load existing form data if editing
+  useEffect(() => {
+    const loadFormData = async () => {
+      if (editingFormId) {
+        const docRef = doc(db, "forms", editingFormId);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          setTitle(data.title || "");
+          setDescription(data.description || "");
+          setFields(data.fields || []);
+          setMediaUrl(data.mediaUrl || null);
+          setAllowAnonymity(data.allowAnonymity ?? true);
+          setAllowedFaculty(data.allowedFaculty || FACULTIES_LIST);
+          setFormId(editingFormId);
+        }
+      }
+    };
+    loadFormData();
+  }, [editingFormId]);
 
-  // Load created forms from cloud
-  const loadSavedForms = async () => {
-    setFetchingForms(true);
-    try {
-      const q = query(collection(db, "forms"), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
-      const loaded: CustomForm[] = [];
-      snap.forEach((docSnap) => {
-        loaded.push({ id: docSnap.id, ...docSnap.data() } as CustomForm);
-      });
-      setSavedForms(loaded);
-    } catch (err) {
-      console.error("Failed to fetch custom forms history: ", err);
-    } finally {
-      setFetchingForms(false);
+  // Handle AI state
+  useEffect(() => {
+    if (initialFormState) {
+      if (initialFormState.title) setTitle(initialFormState.title);
+      if (initialFormState.description) setDescription(initialFormState.description);
+      if (initialFormState.fields) {
+        setFields(initialFormState.fields.map((f: any) => ({
+          ...f,
+          id: f.id || `field_${Math.random().toString(36).substring(2, 9)}`
+        })));
+      }
+      if (onClearInitial) onClearInitial();
     }
-  };
+  }, [initialFormState, onClearInitial]);
+
+  // Load responses if on responses tab
+  useEffect(() => {
+    if (currentTab === "Responses" && formId) {
+      const q = query(collection(db, "suggestions"), where("formId", "==", formId), orderBy("createdAt", "desc"));
+      getDocs(q).then((snap) => {
+        const loaded: any[] = [];
+        snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
+        setResponses(loaded);
+      });
+    }
+  }, [currentTab, formId]);
+
+  // Auto-save logic
+  useEffect(() => {
+    if (!formId) return;
+
+    const timeout = setTimeout(async () => {
+      setIsSaving(true);
+      try {
+        const payload = {
+          title: (title || "").trim(),
+          description: (description || "").trim(),
+          fields: fields.map(f => ({
+            id: f.id,
+            type: f.type,
+            label: f.label || "Untitled",
+            required: !!f.required,
+            options: f.options || []
+          })),
+          mediaUrl: mediaUrl || null,
+          allowAnonymity: !!allowAnonymity,
+          allowedFaculty: allowedFaculty || [],
+          updatedAt: serverTimestamp(),
+        };
+        await updateDoc(doc(db, "forms", formId), payload);
+      } catch (err) {
+        console.error("Auto-save failed:", err);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 2000); // 2 second debounce
+
+    return () => clearTimeout(timeout);
+  }, [title, description, fields, mediaUrl, allowAnonymity, allowedFaculty, formId]);
 
   useEffect(() => {
-    loadSavedForms();
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowProfileDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Checkbox toggles
-  const handleFacultyToggle = (fac: string) => {
-    if (allowedFaculty.includes(fac)) {
-      setAllowedFaculty(allowedFaculty.filter((item) => item !== fac));
-    } else {
-      setAllowedFaculty([...allowedFaculty, fac]);
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!resp.ok) throw new Error("Upload failed");
+
+      const data = await resp.json();
+      const url = data.url;
+
+      if (activeId === "header") {
+        setMediaUrl(url);
+      } else {
+        updateField(activeId, { mediaUrl: url });
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      setErrorText("Failed to upload image. Please try again.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleCategoryToggle = (cat: string) => {
-    if (allowedCategories.includes(cat)) {
-      setAllowedCategories(allowedCategories.filter((item) => item !== cat));
+  const addField = (fieldType: FormField["type"]) => {
+    const newId = `field_${Math.random().toString(36).substring(2, 9)}`;
+    const newField: FormField = {
+      id: newId,
+      type: fieldType,
+      label: "",
+      required: false,
+      options: fieldType === "multiple-choice" ? ["Option 1"] : undefined
+    };
+    const activeIndex = fields.findIndex(f => f.id === activeId);
+    if (activeIndex >= 0) {
+      const newFields = [...fields];
+      newFields.splice(activeIndex + 1, 0, newField);
+      setFields(newFields);
     } else {
-      setAllowedCategories([...allowedCategories, cat]);
+      setFields([...fields, newField]);
     }
+    setActiveId(newId);
   };
 
-  const handleCreateForm = async (e: FormEvent) => {
-    e.preventDefault();
+  const removeField = (id: string) => {
+    setFields(fields.filter(f => f.id !== id));
+  };
+
+  const updateField = (id: string, updates: Partial<FormField>) => {
+    setFields(fields.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
+
+  const handleCreateForm = async () => {
+    if (formId) return; // Already saved/editing
+
     setErrorText(null);
     setSuccessMsg(null);
-    setLatestLinkId(null);
 
-    if (!title.trim() || !description.trim()) {
-      setErrorText("Please state a form title and guiding statement/description.");
-      return;
-    }
-    if (allowedFaculty.length === 0) {
-      setErrorText("Please grant permission to at least one faculty department.");
-      return;
-    }
-    if (allowedCategories.length === 0) {
-      setErrorText("Please check at least one allowed category.");
+    if (!title.trim()) {
+      setErrorText("Please provide a form title.");
       return;
     }
 
     setLoading(true);
     try {
-      const formSlug = `box_${Math.random().toString(36).substring(2, 11)}`;
-      const docRef = doc(db, "forms", formSlug);
+      // Use Firestore to generate a unique ID if not already present
+      const formsRef = collection(db, "forms");
+      const docRef = doc(formsRef);
+      const docId = docRef.id;
 
       const payload = {
-        title: title.trim(),
-        description: description.trim(),
-        allowedFaculty,
-        allowedCategories,
-        allowAnonymity,
-        createdBy: adminEmail,
+        title: (title || "").trim(),
+        description: (description || "").trim(),
+        allowedFaculty: allowedFaculty || [],
+        allowedCategories: CATEGORIES_LIST || [],
+        allowAnonymity: !!allowAnonymity,
+        type: "survey",
+        mediaUrl: mediaUrl || null,
+        fields: fields.map(f => ({
+          id: f.id,
+          type: f.type,
+          label: f.label || "Untitled",
+          required: !!f.required,
+          options: f.options || []
+        })),
+        responseCount: 0,
+        createdBy: adminId || "anonymous",
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
 
       await setDoc(docRef, payload);
-
-      setSuccessMsg(`Format profile registered securely under ID: ${formSlug}`);
-      setLatestLinkId(formSlug);
-      setTitle("");
-      setDescription("");
-      setAllowedFaculty(FACULTIES_LIST);
-      setAllowedCategories(CATEGORIES_LIST);
-      setAllowAnonymity(true);
-
-      // Refresh list
-      await loadSavedForms();
+      setFormId(docId);
+      setSuccessMsg(`Form created successfully!`);
+      setShowShareModal(true);
     } catch (err: any) {
-      console.error(err);
-      setErrorText("Could not write record profile back to cloud Firestore.");
+      console.error("Save Form Error:", err);
+      // Fallback message showing the error for user diagnostics
+      setErrorText(`Could not save form: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteForm = async (id: string) => {
-    if (!confirm("Are you sure you want to permanently disable this custom form shared link? Users with the link will no longer be able to open it.")) {
+  const handlePreview = () => {
+    if (!formId) {
+      alert("Please save the form first.");
       return;
     }
-
-    try {
-      await deleteDoc(doc(db, "forms", id));
-      loadSavedForms();
-    } catch (err) {
-      console.error("Failed to remove: ", err);
-    }
+    window.open(`${window.location.origin}/?formId=${formId}`, "_blank");
   };
 
-  const copyToClipboard = (id: string) => {
-    const origin = window.location.origin;
-    const shareableLink = `${origin}/?formId=${id}`;
-
-    navigator.clipboard.writeText(shareableLink).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 3000);
-    }).catch(err => {
-      console.error("Could not write to hardware clipboard: ", err);
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId("share-link");
+      setTimeout(() => setCopiedId(null), 2000);
     });
   };
 
+  const FloatingToolbar = ({ active }: { active: boolean }) => {
+    if (!active || currentTab !== "Questions") return null;
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-white p-2 flex flex-row items-center justify-around border-t border-slate-200 z-[60] shadow-[0_-4px_10px_rgba(0,0,0,0.05)] md:absolute md:top-0 md:-right-14 md:bottom-auto md:left-auto md:w-12 md:flex-col md:gap-1 md:border md:rounded-lg md:shadow-md md:z-10 md:justify-start">
+        <button onClick={() => addField("multiple-choice")} className="p-2 text-slate-600 hover:bg-slate-100 rounded text-center flex items-center justify-center" aria-label="Add question"><Plus size={20}/></button>
+        <button onClick={() => addField("text")} className="p-2 text-slate-600 hover:bg-slate-100 rounded font-serif font-bold text-lg leading-none flex items-center justify-center">Tt</button>
+        <button 
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2 text-slate-600 hover:bg-slate-100 rounded flex items-center justify-center"
+        >
+          {uploading ? <Clock size={18} className="animate-spin" /> : <ImageIcon size={18}/>}
+        </button>
+        <button className="p-2 text-slate-600 hover:bg-slate-100 rounded flex items-center justify-center"><PlaySquare size={18}/></button>
+        <button className="p-2 text-slate-600 hover:bg-slate-100 rounded flex items-center justify-center"><Equal size={18}/></button>
+      </div>
+    );
+  };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-      {/* Creation workspace section */}
-      <div className="lg:col-span-5 space-y-6">
-        <div className="glass-card-premium rounded-3xl p-6 border border-white relative overflow-hidden shadow-xl">
-          <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500" />
-
-          <div className="flex items-center gap-2.5 mb-2">
-            <div className="p-2 bg-purple-50 text-purple-600 rounded-xl border border-purple-100">
-              <Sliders size={18} />
+    <div className="min-h-screen bg-[#f0ebf8] font-sans text-slate-900 pb-20 overflow-x-hidden">
+      {/* App Header Strip */}
+      <div className="sticky top-0 bg-white z-50 shadow-sm">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <ArrowLeft size={20} className="text-slate-600" />
+            </button>
+            <div className="w-10 h-10 bg-[#673ab7] rounded-lg flex items-center justify-center text-white font-bold text-xl shrink-0">F</div>
+            <div className="min-w-0">
+               <h1 className="text-lg font-medium text-slate-800 truncate">{title || "Untitled form"}</h1>
+               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                 {isSaving ? (
+                    <span className="flex items-center gap-1"><Clock size={10} className="animate-spin" /> Saving...</span>
+                 ) : (
+                    <span>All changes saved</span>
+                 )}
+               </div>
             </div>
-            <h3 className="text-lg font-extrabold text-slate-800">Dynamic Form Creator</h3>
           </div>
-          <p className="text-xs text-slate-500 mb-6 leading-relaxed font-semibold">
-            Define dynamic feedback scopes, restrict departments, alter allowed feedback tags, and generate instant URLs for students to fill out anonymously or named.
-          </p>
-
-          {errorText && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold">
-              {errorText}
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-250 text-emerald-800 rounded-2xl text-xs space-y-2">
-              <div className="font-bold">Form Generated Successfully!</div>
-              {latestLinkId && (
-                <div className="space-y-2">
-                  <p className="font-mono text-[11px] bg-white p-2 rounded-xl border border-emerald-100 break-all select-all font-bold">
-                    {window.location.origin}/?formId={latestLinkId}
-                  </p>
-                  <button
-                    onClick={() => copyToClipboard(latestLinkId)}
-                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer text-xs"
-                  >
-                    {copiedId === latestLinkId ? (
-                      <>
-                        <ClipboardCheck size={14} className="animate-pulse" />
-                        Copied Link!
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={14} />
-                        Copy Shareable Link
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <form onSubmit={handleCreateForm} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-slate-400 font-extrabold mb-1.5">
-                Custom Form Title *
-              </label>
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. FOS Special Lab Evaluation"
-                className="w-full glass-input text-slate-800 border-slate-350 rounded-xl py-2 px-3 text-xs outline-none font-bold placeholder:text-slate-400"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-slate-400 font-extrabold mb-1.5">
-                Guiding Statement / Description *
-              </label>
-              <textarea
-                required
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Instruct students what feedback/complaints to submit..."
-                className="w-full glass-input text-slate-800 border-slate-350 rounded-xl py-2 px-3 text-xs outline-none font-medium placeholder:text-slate-400"
-              />
-            </div>
-
-            {/* Faculty filter list checkboxes */}
-            <div className="space-y-2 bg-[#f8fafc] p-3.5 rounded-2xl border border-slate-200">
-              <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">
-                Permitted Department Clusters *
-              </label>
-              <div className="space-y-1.5">
-                {FACULTIES_LIST.map((fac) => {
-                  const isChecked = allowedFaculty.includes(fac);
-                  return (
-                    <label key={fac} className="flex items-center gap-2 cursor-pointer select-none text-[11px] font-medium text-slate-650">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleFacultyToggle(fac)}
-                        className="rounded text-purple-600 border-slate-300 focus:ring-purple-500"
-                      />
-                      <span>{fac}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Allowed tags checkboxes */}
-            <div className="space-y-2 bg-[#f8fafc] p-3.5 rounded-2xl border border-slate-200">
-              <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">
-                Permitted Submission Tags *
-              </label>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {CATEGORIES_LIST.map((cat) => {
-                  const isChecked = allowedCategories.includes(cat);
-                  return (
-                    <label key={cat} className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-medium text-slate-650">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleCategoryToggle(cat)}
-                        className="rounded text-purple-600 border-slate-300 focus:ring-purple-500"
-                      />
-                      <span>{cat}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Active anonymity toggle */}
-            <div className="flex items-center justify-between p-3.5 bg-purple-50/40 rounded-2xl border border-purple-100">
-              <div>
-                <span className="text-xs font-bold text-slate-755 block">Allow Student Anonymity</span>
-                <span className="text-[10px] text-slate-450 mt-0.5 block">Permit anonymous submissions</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={allowAnonymity}
-                onChange={(e) => setAllowAnonymity(e.target.checked)}
-                className="w-4 h-4 text-purple-600 border-slate-300 rounded focus:ring-purple-500 cursor-pointer"
-              />
-            </div>
-
-            <button
-              type="submit"
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <button onClick={handlePreview} className="text-slate-600 hover:text-slate-900 p-2 hover:bg-slate-50 rounded-full transition-colors" title="Preview">
+              <Eye size={20}/>
+            </button>
+            <button className="text-slate-600 hover:text-slate-900 p-2 hover:bg-slate-50 rounded-full transition-colors hidden sm:block">
+              <SettingsIcon size={20}/>
+            </button>
+            <button 
+              className="bg-[#673ab7] hover:bg-[#5e35b1] text-white px-4 py-2 sm:px-6 rounded-lg font-medium text-sm transition-colors shadow-sm flex items-center gap-2" 
+              onClick={() => formId ? setShowShareModal(true) : handleCreateForm()} 
               disabled={loading}
-              className="w-full py-3.5 jelly-glass-button jelly-button-purple text-white font-extrabold text-xs rounded-full flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
             >
-              {loading ? (
-                <div className="w-4.5 h-4.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Plus size={14} />
-                  Compile & Save Channel Link
-                </>
+              {formId ? <Share2 size={16} /> : null}
+              {formId ? "Share" : loading ? "Sending..." : "Send"}
+            </button>
+            
+            <div className="relative" ref={dropdownRef}>
+              <button 
+                onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                className="flex items-center gap-1 p-1 hover:bg-slate-100 rounded-full transition-all border border-transparent hover:border-slate-200"
+              >
+                <img 
+                  src={user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || user?.email}&background=673ab7&color=fff`} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full border border-slate-200 object-cover"
+                />
+                <ChevronDown size={14} className={`text-slate-400 transition-transform ${showProfileDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence>
+                {showProfileDropdown && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                    className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-[60]"
+                  >
+                    <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
+                      <img 
+                        src={user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || user?.email}&background=673ab7&color=fff`} 
+                        alt="Profile" 
+                        className="w-10 h-10 rounded-full border border-slate-100"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-800 truncate">{user?.displayName || "Admin User"}</p>
+                        <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                      </div>
+                    </div>
+                    <div className="px-2 py-2">
+                       <button className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-3 transition-colors">
+                          <SettingsIcon size={16} /> Order Settings
+                       </button>
+                       <button className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-3 transition-colors">
+                          <ImageIcon size={16} /> Branding Options
+                       </button>
+                    </div>
+                    <div className="px-2 pt-2 border-t border-slate-100">
+                       <button 
+                        onClick={() => signOut(auth)}
+                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-3 transition-colors"
+                       >
+                          <LogOut size={16} /> Sign out
+                       </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+        
+        {/* Centered Tabs */}
+        <div className="flex justify-center gap-10 px-6 border-b border-slate-300">
+          {[
+            { id: "Questions", icon: Plus },
+            { id: "Responses", icon: MessageSquare },
+            { id: "Settings", icon: SettingsIcon }
+          ].map((tab) => (
+            <button 
+              key={tab.id}
+              onClick={() => setCurrentTab(tab.id as any)}
+              className={`pb-3 text-sm font-medium transition-colors flex items-center gap-2 ${currentTab === tab.id ? "text-[#673ab7] border-b-[3px] border-[#673ab7]" : "text-slate-600 hover:text-slate-800"}`}
+            >
+              {tab.id}
+              {tab.id === "Responses" && responses.length > 0 && (
+                <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{responses.length}</span>
               )}
             </button>
-          </form>
+          ))}
         </div>
       </div>
 
-      {/* Generated links history logs section */}
-      <div className="lg:col-span-7 space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest font-mono">
-            Active Shareable Links ({savedForms.length})
-          </h4>
-          <button
-            onClick={loadSavedForms}
-            disabled={fetchingForms}
-            className="text-[11px] font-bold text-purple-600 hover:text-purple-750 font-mono"
-          >
-            {fetchingForms ? "Refreshing..." : "Sync List"}
-          </button>
-        </div>
+      <div className="max-w-[770px] w-full mx-auto py-8 px-4 space-y-3">
+        
+        {currentTab === "Questions" && (
+          <>
+            {/* Header Card */}
+            <div 
+              onClick={() => setActiveId("header")}
+              className={`relative bg-white rounded-lg transition-all cursor-pointer ${
+                activeId === "header" ? "shadow-md" : "shadow-sm border border-slate-200"
+              }`}
+            >
+              <div className="h-[10px] bg-[#673ab7] rounded-t-lg absolute top-0 left-0 right-0" />
+              {activeId === "header" && (
+                <div className="absolute top-[10px] left-0 bottom-0 w-[6px] bg-[#673ab7] rounded-bl-lg" />
+              )}
+              
+              <FloatingToolbar active={activeId === "header"} />
 
-        {fetchingForms && savedForms.length === 0 ? (
-          <div className="p-8 bg-white/50 border border-slate-200 text-center rounded-3xl">
-            <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-xs text-slate-500">Retrieving Custom Share Logs...</p>
-          </div>
-        ) : savedForms.length === 0 ? (
-          <div className="p-10 bg-white/70 border border-slate-200 text-center rounded-3xl">
-            <p className="text-xs text-slate-400 font-medium">No custom share links generated yet.</p>
-            <p className="text-[11px] text-slate-400 mt-1">Use the workspace form panel on the left to spawn your starting active share link.</p>
-          </div>
-        ) : (
-          <div className="space-y-3.5">
-            {savedForms.map((form) => {
-              const shareLink = `${window.location.origin}/?formId=${form.id}`;
-              const isCopied = copiedId === form.id;
+              {mediaUrl && (
+                <div className="relative group">
+                  <img src={mediaUrl} alt="Form Header" className="w-full h-48 object-cover rounded-t-lg" />
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setMediaUrl(null); }}
+                    className="absolute top-2 right-2 p-1 bg-white/80 rounded-full hover:bg-white text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
 
+              <div className="p-8 pt-10">
+                <input
+                  className="w-full text-4xl font-normal text-slate-900 placeholder:text-slate-400 focus:outline-none border-b border-transparent focus:border-b-2 focus:border-[#673ab7] py-1 mb-2"
+                  placeholder="Untitled form"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+                <textarea
+                  className="w-full text-base text-slate-600 placeholder:text-slate-400 focus:outline-none border-b border-transparent focus:border-b-2 focus:border-[#673ab7] py-2 mt-2 resize-none leading-relaxed"
+                  placeholder="Form description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={1}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = "auto";
+                    target.style.height = `${target.scrollHeight}px`;
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Questions Area */}
+            {fields.map((field, idx) => {
+              const isActive = activeId === field.id;
               return (
-                <div key={form.id} className="bg-white border border-slate-200 rounded-3xl p-5 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start gap-3">
-                    <div>
-                      <span className="text-[9px] font-mono bg-purple-150 bg-purple-50 text-purple-705 border border-purple-200 px-2 py-0.5 rounded font-bold">
-                        ID: {form.id}
-                      </span>
-                      <h5 className="font-extrabold text-sm text-slate-800 tracking-tight mt-1.5">
-                        {form.title}
-                      </h5>
-                      <p className="text-xs text-slate-505 leading-relaxed mt-1 font-medium">
-                        {form.description}
-                      </p>
+                <div 
+                  key={field.id} 
+                  onClick={() => setActiveId(field.id)}
+                  className={`relative bg-white p-6 rounded-lg transition-all cursor-pointer ${
+                    isActive ? "shadow-md" : "shadow-sm border border-slate-200"
+                  }`}
+                >
+                  {isActive && (
+                    <div className="absolute top-0 left-0 bottom-0 w-[6px] bg-[#673ab7] rounded-l-lg" />
+                  )}
+                  <FloatingToolbar active={isActive} />
+
+                  <div className="flex flex-col gap-4">
+                    {field.mediaUrl && (
+                      <div className="relative group max-w-sm">
+                        <img src={field.mediaUrl} alt="Question Media" className="w-full rounded-lg border border-slate-200" />
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); updateField(field.id, { mediaUrl: undefined }); }}
+                          className="absolute top-2 right-2 p-1 bg-white/80 rounded-full hover:bg-white text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-4">
+                      <input 
+                        className="flex-1 text-base bg-slate-50 font-medium p-4 focus:bg-slate-100 focus:outline-none border-b-2 border-slate-300 focus:border-[#673ab7] rounded-t-md transition-colors"
+                        placeholder="Question"
+                        value={field.label}
+                        onChange={(e) => updateField(field.id, { label: e.target.value })}
+                      />
+                      {isActive && (
+                        <select 
+                          value={field.type}
+                          onChange={(e) => updateField(field.id, { type: e.target.value as any })}
+                          className="p-3 border border-slate-300 rounded-md bg-white text-sm font-medium text-slate-700 outline-none focus:border-[#673ab7]"
+                        >
+                          <option value="text">Short answer</option>
+                          <option value="long-text">Paragraph</option>
+                          <option value="multiple-choice">Multiple choice</option>
+                        </select>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => copyToClipboard(form.id)}
-                        title="Copy Student Link"
-                        className={`p-2.5 rounded-xl border cursor-pointer select-none transition-all ${
-                          isCopied
-                            ? "bg-emerald-50 border-emerald-250 text-emerald-600"
-                            : "bg-purple-50 border-purple-200 text-purple-600 hover:bg-purple-100"
-                        }`}
-                      >
-                        {isCopied ? <ClipboardCheck size={14} /> : <Copy size={14} />}
-                      </button>
+                    <div className="ml-2">
+                      {field.type === "multiple-choice" && (
+                        <div className="space-y-3">
+                          {field.options?.map((opt, oIdx) => (
+                            <div key={oIdx} className="flex items-center gap-3 group">
+                               <div className="w-4 h-4 rounded-full border-2 border-slate-300 mt-1" />
+                               <input 
+                                className="flex-1 text-sm text-slate-700 focus:outline-none border-b border-transparent focus:border-b-2 focus:border-[#673ab7] py-1 transition-all"
+                                value={opt}
+                                placeholder={`Option ${oIdx + 1}`}
+                                onChange={(e) => {
+                                  const newOpts = [...(field.options || [])];
+                                  newOpts[oIdx] = e.target.value;
+                                  updateField(field.id, { options: newOpts });
+                                }}
+                               />
+                               {isActive && field.options!.length > 1 && (
+                                 <button 
+                                  onClick={() => {
+                                    const newOpts = (field.options || []).filter((_, i) => i !== oIdx);
+                                    updateField(field.id, { options: newOpts });
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity p-2"
+                                 >
+                                   <Plus size={16} className="rotate-45" />
+                                 </button>
+                               )}
+                            </div>
+                          ))}
+                          {isActive && (
+                            <div className="flex items-center gap-3">
+                              <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
+                              <button 
+                                onClick={() => updateField(field.id, { options: [...(field.options || []), `Option ${(field.options?.length || 0) + 1}`] })}
+                                className="text-sm font-medium text-slate-500 hover:border-b hover:border-slate-300"
+                              >
+                                Add option
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                      <button
-                        onClick={() => handleDeleteForm(form.id)}
-                        title="Delete Form Link"
-                        className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-650 hover:bg-red-100 cursor-pointer select-none"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {field.type === "text" && (
+                        <div className="w-1/2 border-b-2 border-dotted border-slate-300 pb-1 pt-2">
+                          <span className="text-sm text-slate-400">Short answer text</span>
+                        </div>
+                      )}
+
+                      {field.type === "long-text" && (
+                        <div className="w-3/4 border-b-2 border-dotted border-slate-300 pb-1 pt-2">
+                          <span className="text-sm text-slate-400">Long answer text</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
 
-                  {/* Metadata display badges */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-slate-450 font-mono mt-4 pt-3.5 border-t border-slate-100">
-                    <span className="font-bold text-purple-600">Permissions:</span>
-                    <span className="text-slate-500 font-medium bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-[9px]">
-                      {form.allowedFaculty.length} Clusters
-                    </span>
-                    <span className="text-slate-505 font-medium bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-[9px]">
-                      {form.allowedCategories.join(", ")}
-                    </span>
-                    <span className="text-slate-505 font-medium bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-[9px]">
-                      {form.allowAnonymity ? "Anonymity Allowed" : "Enforce Name Identification"}
-                    </span>
+                    {isActive && (
+                      <div className="flex items-center justify-end gap-4 pt-4 mt-4 border-t border-slate-100 text-slate-500">
+                        <button onClick={() => {
+                          const newField = { ...field, id: `field_${Math.random().toString(36).substring(2, 9)}` };
+                          const activeIndex = fields.findIndex(f => f.id === field.id);
+                          const newFields = [...fields];
+                          newFields.splice(activeIndex + 1, 0, newField);
+                          setFields(newFields);
+                          setActiveId(newField.id);
+                        }} className="hover:text-slate-700 p-2 rounded-full hover:bg-slate-50" aria-label="Duplicate">
+                          <Copy size={18} />
+                        </button>
+                        <button onClick={() => removeField(field.id)} className="hover:text-slate-700 p-2 rounded-full hover:bg-slate-50" aria-label="Delete">
+                          <Trash2 size={18} />
+                        </button>
+                        <div className="w-px h-6 bg-slate-300 mx-2" />
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <span className="text-sm font-medium">Required</span>
+                          <div className={`w-9 h-3.5 rounded-full relative transition-colors ${field.required ? 'bg-[#c2b0e6]' : 'bg-slate-300'}`}>
+                            <div className={`absolute -top-1 w-5 h-5 rounded-full shadow transition-all duration-200 ${field.required ? 'right-0 bg-[#673ab7]' : 'left-0 bg-white'}`} />
+                          </div>
+                          <input 
+                            type="checkbox" 
+                            checked={field.required}
+                            onChange={(e) => updateField(field.id, { required: e.target.checked })}
+                            className="sr-only" 
+                          />
+                        </label>
+                        <button className="hover:text-slate-700 p-2 rounded-full hover:bg-slate-50 ml-2" aria-label="More options">
+                          <MoreVertical size={18} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
+
+            {!formId && (
+               <div className="bg-white p-8 rounded-lg shadow-sm border border-slate-200 mt-8">
+                  <h3 className="text-xl font-medium text-slate-800 mb-6">Publish Details</h3>
+                  
+                  <div className="space-y-6">
+                    {errorText && (
+                      <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm flex items-start gap-3">
+                        <AlertCircle size={18} className="mt-0.5" />
+                        <span>{errorText}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                       <div className="space-y-1">
+                         <span className="text-sm font-medium text-slate-800">Allow Anonymity</span>
+                         <p className="text-xs text-slate-500">Users can submit responses without signing in.</p>
+                       </div>
+                       <label className="flex items-center cursor-pointer">
+                         <div className={`w-10 h-4 rounded-full relative transition-colors ${allowAnonymity ? 'bg-[#c2b0e6]' : 'bg-slate-300'}`}>
+                           <div className={`absolute -top-1 w-6 h-6 rounded-full shadow transition-all duration-200 ${allowAnonymity ? 'right-0 bg-[#673ab7]' : 'left-0 bg-white'}`} />
+                         </div>
+                         <input 
+                           type="checkbox" 
+                           checked={allowAnonymity}
+                           onChange={(e) => setAllowAnonymity(e.target.checked)}
+                           className="sr-only" 
+                         />
+                       </label>
+                    </div>
+
+                    <button
+                     onClick={handleCreateForm}
+                     disabled={loading}
+                     className="bg-[#673ab7] hover:bg-[#5e35b1] text-white w-full py-4 text-lg font-medium rounded-lg shadow transition-colors mt-4"
+                    >
+                       {loading ? "Saving..." : "Create Form"}
+                    </button>
+                  </div>
+               </div>
+            )}
+          </>
+        )}
+
+        {currentTab === "Responses" && (
+          <div className="space-y-6">
+            <div className="bg-white p-8 rounded-lg shadow-sm border border-slate-200">
+              <div className="flex items-center justify-between mb-8">
+                 <div>
+                   <h2 className="text-2xl font-bold text-slate-800">{responses.length} responses</h2>
+                   <p className="text-sm text-slate-500 mt-1">Collecting submissions</p>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <button className="bg-green-700 text-white px-4 py-2 rounded font-medium text-sm">Download CSV</button>
+                 </div>
+              </div>
+
+              {responses.length === 0 ? (
+                <div className="py-20 text-center flex flex-col items-center gap-4">
+                   <Inbox size={48} className="text-slate-300" />
+                   <p className="text-slate-500 font-medium">Waiting for responses...</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                   {responses.map((resp, i) => (
+                     <div key={i} className="p-4 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between mb-2">
+                           <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-[#673ab7]">Response #{responses.length - i}</span>
+                              <span className="text-xs text-slate-400">•</span>
+                              <span className="text-xs font-medium text-slate-600">{resp.fullName || "Anonymous"}</span>
+                           </div>
+                           <span className="text-xs text-slate-400">{resp.createdAt?.toDate().toLocaleString()}</span>
+                        </div>
+                        <div className="space-y-2">
+                           {Object.entries(resp.answers || {}).map(([key, val]: any, kIdx) => (
+                              <div key={kIdx} className="text-sm">
+                                 <span className="text-slate-500 font-medium">{key}: </span>
+                                 <span className="text-slate-800">{String(val)}</span>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                   ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {currentTab === "Settings" && (
+           <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                    <h3 className="font-bold text-slate-800">Form Settings</h3>
+                 </div>
+                 <div className="p-6 space-y-8">
+                    <div className="flex items-center justify-between">
+                       <div>
+                          <p className="font-medium text-slate-900">Allow Anonymity</p>
+                          <p className="text-xs text-slate-500">Enable if you don't need to track user identities</p>
+                       </div>
+                       <label className="flex items-center cursor-pointer">
+                          <div className={`w-10 h-4 rounded-full relative transition-colors ${allowAnonymity ? 'bg-[#c2b0e6]' : 'bg-slate-300'}`}>
+                            <div className={`absolute -top-1 w-6 h-6 rounded-full shadow transition-all duration-200 ${allowAnonymity ? 'right-0 bg-[#673ab7]' : 'left-0 bg-white'}`} />
+                          </div>
+                          <input 
+                            type="checkbox" 
+                            checked={allowAnonymity}
+                            onChange={(e) => setAllowAnonymity(e.target.checked)}
+                            className="sr-only" 
+                          />
+                       </label>
+                    </div>
+
+                    <div className="space-y-4">
+                       <p className="font-medium text-slate-900">Restricted Faculties</p>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {FACULTIES_LIST.map(f => (
+                             <label key={f} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  checked={allowedFaculty.includes(f)}
+                                  onChange={(e) => {
+                                     if (e.target.checked) setAllowedFaculty([...allowedFaculty, f]);
+                                     else setAllowedFaculty(allowedFaculty.filter(x => x !== f));
+                                  }}
+                                  className="w-4 h-4 rounded text-[#673ab7] focus:ring-[#673ab7]"
+                                />
+                                <span className="text-sm text-slate-700">{f}</span>
+                             </label>
+                          ))}
+                       </div>
+                    </div>
+                 </div>
+              </div>
+           </div>
+        )}
+
       </div>
+
+      <AnimatePresence>
+        {showShareModal && formId && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowShareModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-800">Share Form</h2>
+                <button onClick={() => setShowShareModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-8 space-y-8">
+                <div className="flex flex-col items-center gap-6">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <QRCodeSVG 
+                      value={`${window.location.origin}/?formId=${formId}`}
+                      size={180}
+                      level="H"
+                      includeMargin={true}
+                    />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-slate-800">Scan QR Code</p>
+                    <p className="text-xs text-slate-500 mt-1">Students can scan this to open the form instantly</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-sm font-bold text-slate-700">Shareable Link</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-600 font-mono truncate">
+                      {window.location.origin}/?formId={formId}
+                    </div>
+                    <button 
+                      onClick={() => copyToClipboard(`${window.location.origin}/?formId=${formId}`)}
+                      className="bg-[#673ab7] hover:bg-[#5e35b1] text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 shrink-0"
+                    >
+                      {copiedId === "share-link" ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                      {copiedId === "share-link" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-8 py-6 bg-slate-50 flex justify-end">
+                <button 
+                  onClick={() => setShowShareModal(false)}
+                  className="bg-white border border-slate-200 text-slate-700 px-6 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImageUpload} 
+        accept="image/*" 
+        className="hidden" 
+      />
     </div>
   );
 }
+

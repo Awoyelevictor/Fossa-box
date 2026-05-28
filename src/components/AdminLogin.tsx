@@ -39,73 +39,66 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
   };
 
   return (
-    <div className="max-w-md mx-auto my-12 glass-card-premium rounded-3xl p-8 border border-white shadow-2xl relative overflow-hidden bg-white/80">
-      {/* Decorative Neon Glimmer */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-[3px] bg-gradient-to-r from-transparent via-purple-600 to-transparent" />
-
-      {/* Subtle background glow */}
-      <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
-
-      <div className="text-center mb-8">
-        <div className="mx-auto w-14 h-14 bg-purple-100 border border-purple-200 rounded-2xl flex items-center justify-center text-purple-600 mb-4 shadow-[0_0_15px_rgba(168,85,247,0.1)]">
-          <KeyRound size={26} strokeWidth={1.5} className="animate-pulse" />
+    <div className="max-w-md mx-auto my-16 app-card p-10">
+      <div className="text-center mb-10">
+        <div className="mx-auto w-16 h-16 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-center text-blue-600 mb-6">
+          <KeyRound size={32} strokeWidth={2} />
         </div>
-        <h3 className="text-2.5xl font-black font-sans text-slate-800 tracking-tight mb-2">
-          Administrative Gateway
+        <h3 className="section-title mb-2">
+          Admin Login
         </h3>
-        <p className="text-sm text-slate-500 leading-relaxed">
-          Access the authorized university feedback matrix dashboard with your system passcode.
+        <p className="text-slate-600">
+          Enter your administrator password to manage student feedback and suggestions.
         </p>
       </div>
 
       {errorText && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-250 rounded-2xl flex items-start gap-3 backdrop-blur-md">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
           <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={18} />
-          <p className="text-xs leading-relaxed text-red-800 font-semibold">{errorText}</p>
+          <p className="text-sm font-semibold text-red-800">{errorText}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label className="block text-xs font-mono uppercase tracking-wider text-slate-500 mb-2 font-bold">
-            Admin Password
+        <div className="space-y-2">
+          <label className="block text-sm font-bold text-slate-700">
+            Administrator Password
           </label>
           <div className="relative">
-            <span className="absolute left-3.5 top-3.5 text-slate-400">
-              <Lock size={16} />
+            <span className="absolute left-4 top-3 text-slate-400">
+              <Lock size={18} />
             </span>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter administrator password..."
-              className="w-full glass-input text-slate-800 border-slate-300 rounded-2xl py-3 pl-11 pr-4 outline-none text-sm font-sans placeholder:text-slate-400 font-medium"
+              placeholder="••••••••"
+              className="app-input pl-12"
             />
           </div>
         </div>
 
-        {/* Info Box */}
-        <div className="p-4 bg-[#f8fafc] rounded-2xl border border-slate-200 text-xs text-slate-600 leading-relaxed backdrop-blur-md">
-          <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1">
-            <ShieldCheck size={14} className="text-purple-600" />
-            Verification Guard
+        {/* Security Notice */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-3">
+          <ShieldCheck size={20} className="text-blue-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-bold text-slate-800 block mb-1">Authorized Access Only</span>
+            Only FOSSA committee members or authorized faculty staff should attempt to login.
           </div>
-          Only authorized FOSSA administrative committee or faculty staff members should attempt to gain platform clearance.
         </div>
 
-        {/* Dynamic trigger buttons */}
         <button
           type="submit"
           disabled={loading}
-          className="w-full jelly-glass-button jelly-button-purple text-white py-3.5 rounded-full text-sm font-extrabold flex items-center justify-center gap-3 cursor-pointer select-none transition-all duration-300 disabled:opacity-50"
+          className="app-button-primary w-full py-4 text-lg"
         >
           {loading ? (
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
             <>
-              <LogIn size={16} />
-              Authenticate Console
+              <LogIn size={20} />
+              Login to Dashboard
             </>
           )}
         </button>

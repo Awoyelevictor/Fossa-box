@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Suggestion, CategoryFilter, DepartmentFilter, SentimentFilter, StatusFilter } from "../types";
 import {
   Search,
@@ -15,6 +16,8 @@ import {
   ShieldAlert,
   Inbox,
   Clock,
+  Star,
+  FileText
 } from "lucide-react";
 
 interface AdminSuggestionsTableProps {
@@ -45,10 +48,11 @@ export default function AdminSuggestionsTable({
 
   // Filtered array
   const filteredSuggestions = suggestions.filter((item) => {
+    const answerText = item.answers ? Object.values(item.answers).join(" ").toLowerCase() : "";
     const matchesSearch =
-      item.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.fullName && item.fullName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item.sentimentReasoning && item.sentimentReasoning.toLowerCase().includes(searchTerm.toLowerCase()));
+      (item.message || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      answerText.includes(searchTerm.toLowerCase()) ||
+      (item.fullName && item.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesCat = catFilter === "all" || item.category === catFilter;
     const matchesDept = deptFilter === "all" || item.department === deptFilter;
@@ -74,29 +78,28 @@ export default function AdminSuggestionsTable({
   const handleExportCSV = () => {
     if (filteredSuggestions.length === 0) return;
 
-    // Headings matching university records
     const headers = [
-      "Suggestion ID",
+      "Response ID",
       "Created Date",
-      "Category",
+      "Field Options",
       "Submitter Name",
       "Department",
       "Level",
-      "Message Content",
+      "Answers (Flattened)",
       "AI Sentiment",
-      "AI Analysis Reason",
       "Status",
     ];
 
-    const escape = (val: string) => `"${(val || "").toString().replace(/"/g, '""')}"`;
+    const escape = (val: any) => `"${(val || "").toString().replace(/"/g, '""')}"`;
 
     const rows = filteredSuggestions.map((s) => {
-      // Parse dates cleanly
       let dateString = "N/A";
       if (s.createdAt) {
         const d = s.createdAt.toDate ? s.createdAt.toDate() : new Date(s.createdAt);
         dateString = d.toISOString();
       }
+
+      const flatAnswers = s.answers ? Object.entries(s.answers).map(([k, v]) => `${k}: ${v}`).join("; ") : s.message;
 
       return [
         s.id,
@@ -105,9 +108,8 @@ export default function AdminSuggestionsTable({
         s.isAnonymous ? "Anonymous" : s.fullName || "Named Submitter",
         s.department,
         s.level,
-        s.message,
+        flatAnswers,
         s.sentiment.toUpperCase(),
-        s.sentimentReasoning || "",
         s.status.toUpperCase(),
       ];
     });
@@ -121,7 +123,7 @@ export default function AdminSuggestionsTable({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `university_faculty_feedback_export_${Date.now()}.csv`);
+    link.setAttribute("download", `form_responses_export_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -130,39 +132,20 @@ export default function AdminSuggestionsTable({
   const getSentimentBadge = (sentiment: string) => {
     switch (sentiment) {
       case "urgent":
-        return (
-          <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-xs font-mono font-bold bg-red-100 text-red-800 border border-red-200 shadow-xs uppercase tracking-wide">
-            <ShieldAlert size={12} /> Urgent Action
-          </span>
-        );
-      case "complaint":
-        return (
-          <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200 shadow-xs uppercase tracking-wide">
-            Complaint
-          </span>
-        );
+        return <span className="px-3 py-1 rounded text-[10px] font-black bg-red-100 text-red-600 uppercase">Urgent</span>;
       case "positive":
-        return (
-          <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-xs font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs uppercase tracking-wide">
-            Positive Idea
-          </span>
-        );
+        return <span className="px-3 py-1 rounded text-[10px] font-black bg-blue-100 text-blue-600 uppercase">Positive</span>;
       default:
-        return (
-          <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide">
-            Neutral
-          </span>
-        );
+        return <span className="px-3 py-1 rounded text-[10px] font-black bg-slate-100 text-slate-500 uppercase">Neutral</span>;
     }
   };
 
   const parseItemDate = (createdAt: any) => {
-    if (!createdAt) return "Parsing...";
+    if (!createdAt) return "Processing...";
     const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString("en-GB", {
       month: "short",
       day: "numeric",
-      year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -170,273 +153,154 @@ export default function AdminSuggestionsTable({
 
   return (
     <div className="space-y-6">
-      {/* Search & Export Command Unit */}
-      <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white/70 p-5 rounded-3xl border border-slate-200">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      <div className="flex flex-col md:flex-row md:items-center gap-4">
+        <div className="relative flex-1 group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={20} />
           <input
-            id="admin-search-input"
             type="text"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              setCurrentPage(1); // Reset to page 1 on active search
+              setCurrentPage(1);
             }}
-            placeholder="Search suggestions content, reasoning notes, or names..."
-            className="w-full glass-input text-slate-800 rounded-2xl py-2.5 pl-11 pr-4 outline-none text-sm placeholder:text-slate-400 font-medium"
+            placeholder="Filter Responses..."
+            className="app-input pl-12 h-14"
           />
         </div>
 
         <button
           onClick={handleExportCSV}
           disabled={filteredSuggestions.length === 0}
-          className="jelly-glass-button jelly-button-slate py-2.5 px-4 rounded-full text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+          className="app-button-outline h-14 px-6 font-black uppercase tracking-widest text-xs"
         >
-          <Download size={16} />
-          Download CSV List ({filteredSuggestions.length})
+          <Download size={18} />
+          Export Data ({filteredSuggestions.length})
         </button>
       </div>
 
-      {/* Grid Controls: Multidimensional Filtering */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white/50 p-4 rounded-3xl border border-slate-200 text-xs">
-        {/* Status Filter */}
-        <div>
-          <label className="block text-slate-500 mb-1.5 font-mono uppercase tracking-wider text-[10px] font-bold">
-            Review Status
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value as StatusFilter);
-              setCurrentPage(1);
-            }}
-            className="w-full bg-white border border-slate-300 text-slate-700 rounded-xl py-2 px-3 outline-none"
-          >
-            <option value="all">All States</option>
-            <option value="pending">Pending Review</option>
-            <option value="reviewed">Reviewed Entries</option>
-          </select>
-        </div>
-
-        {/* Category Filter */}
-        <div>
-          <label className="block text-slate-500 mb-1.5 font-mono uppercase tracking-wider text-[10px] font-bold">
-            Faculty Category
-          </label>
-          <select
-            value={catFilter}
-            onChange={(e) => {
-              setCatFilter(e.target.value as CategoryFilter);
-              setCurrentPage(1);
-            }}
-            className="w-full bg-white border border-slate-300 text-slate-700 rounded-xl py-2 px-3 outline-none"
-          >
-            <option value="all">All Categories</option>
-            <option value="Suggestion">Suggestions</option>
-            <option value="Complaint">Complaints</option>
-            <option value="Feedback">Feedback</option>
-            <option value="Idea">Ideas</option>
-          </select>
-        </div>
-
-        {/* Sentiment Filter */}
-        <div>
-          <label className="block text-slate-500 mb-1.5 font-mono uppercase tracking-wider text-[10px] font-bold">
-            AI Sentiment Badges
-          </label>
-          <select
-            value={sentimentFilter}
-            onChange={(e) => {
-              setSentimentFilter(e.target.value as SentimentFilter);
-              setCurrentPage(1);
-            }}
-            className="w-full bg-white border border-slate-300 text-slate-700 rounded-xl py-2 px-3 outline-none"
-          >
-            <option value="all">All Sentiments</option>
-            <option value="positive">Positive Comments</option>
-            <option value="complaint">Routine Complaints</option>
-            <option value="urgent">Urgent Interventions</option>
-          </select>
-        </div>
-
-        {/* Department Filter */}
-        <div>
-          <label className="block text-slate-500 mb-1.5 font-mono uppercase tracking-wider text-[10px] font-bold">
-            Department Layer
-          </label>
-          <select
-            value={deptFilter}
-            onChange={(e) => {
-              setDeptFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full bg-white border border-slate-300 text-slate-700 rounded-xl py-2 px-3 outline-none"
-          >
-            <option value="all">All Departments</option>
-            {departments.map((dept) => (
-              <option key={dept} value={dept}>
-                {dept}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Suggestion list rendering */}
       {paginatedItems.length === 0 ? (
-        <div className="glass-card rounded-2xl p-12 text-center border border-slate-200">
-          <div className="mx-auto w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4 border border-slate-250">
-            <Inbox size={20} />
-          </div>
-          <h4 className="text-base font-bold text-slate-800">No Suggestions Match Filters</h4>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto font-medium">
-            Try resetting your active category selectors, search query, or check back later for live synchronization loops.
-          </p>
+        <div className="app-card p-20 text-center space-y-4">
+          <Inbox size={48} className="mx-auto text-slate-200" />
+          <h3 className="text-xl font-black text-slate-900 uppercase">No Responses Collected</h3>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid gap-4">
           {paginatedItems.map((item) => {
             const isExpanded = expandedId === item.id;
             return (
               <div
-                id={`suggestion-card-${item.id}`}
                 key={item.id}
-                className={`glass-card rounded-2xl border transition-all duration-300 overflow-hidden ${
-                  item.status === "reviewed" ? "opacity-75 border-slate-200/50" : "border-slate-200/90 hover:border-purple-300 shadow-sm"
+                className={`app-card overflow-hidden transition-all border-l-4 ${
+                  item.status === "reviewed" ? "border-l-emerald-400 bg-slate-50/50" : "border-l-blue-600"
                 }`}
               >
-                {/* Visual Header */}
-                <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="py-0.5 px-2 bg-purple-100 text-purple-700 border border-purple-200 rounded font-mono text-[10px] tracking-wide font-bold uppercase">
-                        {item.category}
-                      </span>
-                      {getSentimentBadge(item.sentiment)}
-                      {item.status === "reviewed" ? (
-                        <span className="py-0.5 px-2 bg-slate-100 text-slate-600 rounded-md font-mono text-[10px] font-bold border border-slate-200">
-                          Reviewed
-                        </span>
-                      ) : (
-                        <span className="py-0.5 px-2 bg-blue-50 text-blue-700 rounded-md font-mono text-[10px] font-bold border border-blue-200 animate-pulse">
-                          Pending Action
-                        </span>
-                      )}
-                    </div>
-
-                    <h4 className="text-sm font-bold text-slate-850 font-sans mt-2">
-                      {item.isAnonymous ? "🔒 Anonymous Student" : `👤 ${item.fullName || "Named Submitter"}`}
-                    </h4>
-
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 pt-1">
-                      <span className="font-bold text-slate-700">{item.department}</span>
-                      <span className="text-slate-300">•</span>
-                      <span className="font-medium text-slate-600">{item.level}</span>
-                      <span className="text-slate-300">•</span>
-                      <span className="font-mono text-[11px] flex items-center gap-1 text-slate-500 font-bold">
-                        <Clock size={12} className="text-slate-400" />
-                        {parseItemDate(item.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Operational Action Unit */}
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                      className="text-xs bg-white border border-slate-350 text-slate-600 hover:text-slate-800 hover:bg-slate-50 py-1.5 px-3 rounded-lg duration-200 cursor-pointer select-none font-bold"
-                    >
-                      {isExpanded ? "Collapse Text" : "Expand Message"}
-                    </button>
-
-                    <button
-                      onClick={() => onToggleReviewed(item.id, item.status)}
-                      title={item.status === "reviewed" ? "Mark back to Pending" : "Mark as Reviewed"}
-                      className={`p-2 rounded-lg border cursor-pointer select-none duration-250 ${
-                        item.status === "reviewed"
-                          ? "bg-slate-100 border-slate-200 text-slate-500 hover:text-purple-600"
-                          : "bg-emerald-550/10 bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
-                      }`}
-                    >
-                      <CheckCircle size={15} />
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if (confirm("Are you sure you want to permanently delete this suggestion from university records?")) {
-                          onDelete(item.id);
-                        }
-                      }}
-                      title="Delete Suggestion"
-                      className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-650 hover:bg-red-100 cursor-pointer select-none"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded Box (Glass Drawer) */}
-                {isExpanded && (
-                  <div className="bg-slate-50 border-t border-slate-200 p-5 space-y-4">
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-mono tracking-wider text-slate-400 uppercase font-bold">
-                        Submission Transcript
-                      </span>
-                      <p className="text-slate-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans bg-white border border-slate-200 rounded-2xl p-4 font-medium">
-                        {item.message}
-                      </p>
-                    </div>
-
-                    {/* AI Sentiment analysis segment */}
-                    {item.sentimentReasoning && (
-                      <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl flex items-start gap-2.5">
-                        <Sparkles size={15} className="text-purple-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-slate-800 text-xs font-bold leading-none flex items-center gap-1.5">
-                            Gemini AI System Assessment Context
-                          </p>
-                          <p className="text-[11px] text-purple-900 mt-1.5 leading-relaxed font-mono font-medium">
-                            {item.sentimentReasoning}
-                          </p>
+                <div className="p-8">
+                   <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+                      <div className="space-y-3 flex-1">
+                        <div className="flex items-center gap-2">
+                           {getSentimentBadge(item.sentiment)}
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                             {item.department} • {item.level}
+                           </span>
+                        </div>
+                        <h4 className="text-2xl font-black text-slate-900 tracking-tighter">
+                          {item.isAnonymous ? "Anonymous User" : item.fullName}
+                        </h4>
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                          <Clock size={12} /> {parseItemDate(item.createdAt)}
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                          className="app-button-outline py-2 px-4 text-xs font-black uppercase tracking-widest"
+                        >
+                          {isExpanded ? "Collapse" : "View Details"}
+                        </button>
+                        <button
+                          onClick={() => onToggleReviewed(item.id, item.status)}
+                          className={`p-2 rounded-lg border transition-all ${
+                            item.status === "reviewed" ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-white text-slate-400 border-slate-200 hover:border-blue-300"
+                          }`}
+                        >
+                          <CheckCircle size={20} />
+                        </button>
+                        <button
+                          onClick={() => onDelete(item.id)}
+                          className="p-2 rounded-lg bg-red-50 text-red-600 border border-red-100 hover:bg-red-100"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                   </div>
+
+                   {isExpanded && (
+                     <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      className="mt-8 pt-8 border-t border-slate-100 space-y-6"
+                     >
+                        {item.answers ? (
+                           <div className="grid gap-6">
+                              {Object.entries(item.answers).map(([key, val]: [string, any]) => (
+                                <div key={key} className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{key}</label>
+                                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 group">
+                                     {typeof val === 'number' ? (
+                                       <div className="flex gap-1 text-blue-600">
+                                          {[...Array(val)].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+                                       </div>
+                                     ) : (
+                                       <p className="text-slate-900 font-bold leading-relaxed">{val}</p>
+                                     )}
+                                  </div>
+                                </div>
+                              ))}
+                           </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Feedback Message</label>
+                            <p className="text-slate-800 font-bold leading-relaxed">{item.message}</p>
+                          </div>
+                        )}
+
+                        {item.sentimentReasoning && (
+                          <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 flex gap-3 text-blue-800">
+                             <Sparkles className="shrink-0" size={18} />
+                             <p className="text-sm font-bold uppercase tracking-tight leading-tight">{item.sentimentReasoning}</p>
+                          </div>
+                        )}
+                     </motion.div>
+                   )}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
 
-          {/* Pagination Navigation Elements */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between bg-white border border-slate-200 rounded-2xl p-4 mt-6">
-              <span className="text-xs font-mono text-slate-500 font-semibold">
-                Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} entries
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="p-2 border border-slate-300 text-slate-500 rounded-lg hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-
-                <span className="text-xs font-mono font-bold text-slate-700 px-2 select-none">
-                  Page {currentPage} of {totalPages}
-                </span>
-
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="p-2 border border-slate-300 text-slate-500 rounded-lg hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-6 bg-white rounded-xl border border-slate-200">
+            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              Page {currentPage} of {totalPages}
+            </span>
+            <div className="flex gap-2">
+               <button 
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="app-button-outline p-2 disabled:opacity-20"
+               >
+                 <ChevronLeft size={20} />
+               </button>
+               <button 
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="app-button-outline p-2 disabled:opacity-20"
+               >
+                 <ChevronRight size={20} />
+               </button>
             </div>
-          )}
         </div>
       )}
     </div>
