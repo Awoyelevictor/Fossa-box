@@ -320,7 +320,7 @@ export default function App() {
             </div>
           ) : user && !isAdmin ? (
             <div className="app-card max-w-xl mx-auto p-10 text-center space-y-4">
-              <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto"><ShieldCheck size={28} /></div>
+              <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto"><Building2 size={28} /></div>
               <h2 className="text-2xl font-black text-slate-900">Administrator access required</h2>
               <p className="text-slate-600">You are signed in, but this Google account has not been approved as a FOSSA administrator. Ask the project owner to add your Firebase user ID to the <code>admins</code> collection.</p>
               <button onClick={handleLogout} className="px-5 py-3 rounded-xl bg-purple-700 text-white font-bold">Sign out</button>
