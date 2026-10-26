@@ -14,22 +14,28 @@ interface AISummaryCardProps {
 function AISummaryCard({ suggestions }: AISummaryCardProps) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const getSummary = async () => {
     if (suggestions.length === 0) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/summarize-responses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ responses: suggestions })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not generate the AI summary.");
       if (data.summary) {
         setSummary(data.summary);
+      } else {
+        throw new Error("The AI service returned an empty summary. Please try again.");
       }
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : "AI summary failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -61,6 +67,13 @@ function AISummaryCard({ suggestions }: AISummaryCardProps) {
              </button>
            )}
         </div>
+
+        {error && (
+          <div role="alert" className="rounded-xl border border-white/20 bg-black/10 p-4 text-sm text-white">
+            {error}
+            <button onClick={getSummary} className="ml-2 underline font-bold" disabled={loading}>Try again</button>
+          </div>
+        )}
 
         {loading ? (
           <div className="space-y-3 py-4 animate-pulse">
