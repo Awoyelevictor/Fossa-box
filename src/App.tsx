@@ -30,7 +30,8 @@ import {
   deleteDoc,
   serverTimestamp,
   where,
-  getDocs
+  getDocs,
+  getDoc
 } from "firebase/firestore";
 
 import { Suggestion, FeedbackForm } from "./types";
@@ -42,6 +43,7 @@ import LandingPage from "./components/LandingPage";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [adminTab, setAdminTab] = useState<"dashboard" | "builder" | "responses">("dashboard");
   const [hasFormId, setHasFormId] = useState<boolean>(false);
@@ -78,16 +80,26 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     setHasFormId(params.has("formId"));
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setIsAuthChecking(false);
-      
-      if (currentUser) {
-        const hasSeen = localStorage.getItem("fossa_tutorial_seen");
-        if (!hasSeen) {
-          setShowTutorial(true);
-        }
+      setIsAdmin(null);
+
+      if (!currentUser) {
+        setIsAdmin(false);
+        return;
       }
+
+      try {
+        const adminSnapshot = await getDoc(doc(db, "admins", currentUser.uid));
+        setIsAdmin(adminSnapshot.exists());
+      } catch (error) {
+        console.warn("Could not verify FOSSA administrator access.", error);
+        setIsAdmin(false);
+      }
+
+      const hasSeen = localStorage.getItem("fossa_tutorial_seen");
+      if (!hasSeen) setShowTutorial(true);
     });
 
     return () => unsubscribe();
@@ -300,6 +312,19 @@ export default function App() {
             >
               <SuggestionsForm onSuccessSubmit={() => {}} />
             </motion.div>
+          ) : user && isAdmin === null ? (
+            <div className="app-card max-w-xl mx-auto p-10 text-center space-y-3">
+              <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <h2 className="text-xl font-bold">Verifying administrator access</h2>
+              <p className="text-sm text-slate-500">Please wait while FOSSA checks your account permissions.</p>
+            </div>
+          ) : user && !isAdmin ? (
+            <div className="app-card max-w-xl mx-auto p-10 text-center space-y-4">
+              <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto"><Building2 size={28} /></div>
+              <h2 className="text-2xl font-black text-slate-900">Administrator access required</h2>
+              <p className="text-slate-600">You are signed in, but this Google account has not been approved as a FOSSA administrator. Ask the project owner to add your Firebase user ID to the <code>admins</code> collection.</p>
+              <button onClick={handleLogout} className="px-5 py-3 rounded-xl bg-purple-700 text-white font-bold">Sign out</button>
+            </div>
           ) : user ? (
             <motion.div
               key="admin-flow"

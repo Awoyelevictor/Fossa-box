@@ -1,25 +1,50 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Suggestions collection
-    match /suggestions/{suggestionId} {
-      allow read, write: if true;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Custom Shareable Forms metadata collection
-    match /forms/{formId} {
-      allow read, write: if true;
+    // Provision administrators by creating /admins/{uid} in the Firebase
+    // console. Client users must never be able to grant themselves admin access.
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Admins helper fallback collection
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isAdmin() && request.auth.uid == adminId;
+      allow write: if false;
     }
 
-    // Connection validation collection
+    // Published forms are readable so students can open shared links.
+    // Only verified admins can create, edit, or delete forms. Public form
+    // submissions may increment responseCount by exactly one and change nothing else.
+    match /forms/{formId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responseCount']) &&
+        request.resource.data.responseCount is int &&
+        resource.data.responseCount is int &&
+        request.resource.data.responseCount == resource.data.responseCount + 1
+      );
+    }
+
+    match /suggestions/{suggestionId} {
+      allow create: if request.resource.data.keys().hasOnly([
+        'formId', 'fullName', 'department', 'level', 'answers', 'sentiment',
+        'sentimentReasoning', 'isAnonymous', 'status', 'createdAt'
+      ]) &&
+      request.resource.data.formId is string &&
+      exists(/databases/$(database)/documents/forms/$(request.resource.data.formId)) &&
+      request.resource.data.answers is map &&
+      request.resource.data.isAnonymous is bool &&
+      request.resource.data.status == 'pending';
+      allow read, update, delete: if isAdmin();
+    }
+
     match /test/{testId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

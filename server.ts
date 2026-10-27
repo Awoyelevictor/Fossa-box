@@ -223,6 +223,41 @@ app.post("/api/analyze-sentiment", async (req, res) => {
   }
 });
 
+// AI executive summary for dashboard responses.
+// Keep payloads bounded to protect latency and model usage.
+app.post("/api/summarize-responses", async (req, res) => {
+  const responses = req.body?.responses;
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return res.status(400).json({ error: "At least one response is required." });
+  }
+  if (responses.length > 100) {
+    return res.status(413).json({ error: "Please summarize no more than 100 responses at a time." });
+  }
+
+  const compactResponses = responses.map((item: any) => ({
+    sentiment: typeof item?.sentiment === "string" ? item.sentiment.slice(0, 30) : "unknown",
+    status: typeof item?.status === "string" ? item.status.slice(0, 30) : "unknown",
+    department: typeof item?.department === "string" ? item.department.slice(0, 100) : "",
+    answers: item?.answers && typeof item.answers === "object"
+      ? Object.values(item.answers).map((answer: any) => String(answer).slice(0, 500)).slice(0, 12)
+      : []
+  }));
+
+  try {
+    const ai = getGeminiClient();
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: `Prepare a concise, evidence-based executive summary of these anonymized university feedback responses. Identify recurring themes, urgent issues, positive signals, and 3 practical actions. Do not infer identities or invent statistics. Response count: ${compactResponses.length}. Data: ${JSON.stringify(compactResponses)}` }] }],
+    });
+    const summary = result.text?.trim();
+    if (!summary) return res.status(502).json({ error: "The AI returned an empty summary. Please try again." });
+    return res.json({ summary });
+  } catch (error: any) {
+    console.error("Executive summary generation failed:", error?.message || error);
+    return res.status(502).json({ error: "AI summary is temporarily unavailable. Check the server's Gemini API configuration and try again." });
+  }
+});
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
